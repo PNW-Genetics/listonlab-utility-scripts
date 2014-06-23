@@ -5,7 +5,8 @@ use warnings;
 use Cwd;
 use POSIX qw(strftime);
 
-
+#print "this\n";
+#=begin
 ##### ##### ##### ##### #####
 # Hardwired parameters.
 
@@ -77,7 +78,7 @@ partitioned files could be greater than the starting read count.
 ";
 
 # command line processing.
-getopts('a:c:b:f:d:t:v');
+getopts('a:c:b:f:d:t:m:v');
 die $usage unless ($opt_a);
 die $usage unless ($opt_c);
 
@@ -88,12 +89,13 @@ $infb	= $opt_b;
 $bcInput	= $opt_c; 
 $outdir	= $opt_d ? "bcsort_out".$opt_d :"bcsort_out";
 $verb	= $opt_v ? $opt_v : "F";
-if (!$opt_m ) {
-	$barcodeMatchType = $opt_m;
+if ($opt_m) {
+	$barcodeMatchType = int($opt_m);
 }
 else {
 	$barcodeMatchType = $infb eq '' ? 1 : 4;
 }
+
 
 
 ##### ##### ##### ##### #####
@@ -131,6 +133,8 @@ print $log join("\n",keys %$barcodes)."\n\n";
 print $log "\n      ----- ----- --*-- ----- -----\n\n";
 
 
+
+
 ##### ##### ##### ##### #####
 # Input data and sort
 # into a hash of arrays.
@@ -140,14 +144,117 @@ print $log "\n      ----- ----- --*-- ----- -----\n\n";
 
 print $log "Reading in data:\t\t".makeTimestamp()."\n";;
 
-my ($ina, $inb, $anomA, $anomB);
-open($ina,  "<",  $infa)  or die "Can't open $infa: $!";
-if ($infb){
-	open($inb,  "<",  $infb)  or die "Can't open $infb: $!";
-}
+#my ($ina, $inb, $anomA, $anomB);
 
-chdir($outdir);
+#my ($ida, $seqa, $prba, $idb, $seqb, $prbb);
+my $anom_num = 0;
+my $bc_num = 0;
+my $ntot = 0;
+my %samps;
+
+#process paired end reads
 if ($infb) {
+
+	
+	# Assign an anonymous subroutine to check if the match criteria are met
+	# Only need to do this once per run, so better to do it out here than in input loop
+	my $passesMatch;
+	print "bcmatcht= $barcodeMatchType\n";
+	if ($barcodeMatchType == 1) {
+		$passesMatch = sub{
+			my $R1 = shift;
+			my $R2 = shift;
+			if ($R1 ne '' && $R2 eq '') {
+				return 1;
+			}
+			else {
+				return 0;
+			}
+		}
+	}
+	elsif ($barcodeMatchType == 2) {
+		$passesMatch = sub{
+			my $R1 = shift;
+			my $R2 = shift;
+			if ($R1 eq '' && $R2 ne '') {
+				return 1;
+			}
+			else {
+				return 0;
+			}
+		}
+	}
+	elsif ($barcodeMatchType == 3) {
+		$passesMatch = sub{
+			my $R1 = shift;
+			my $R2 = shift;
+			if (($R1 eq '' && $R2 ne '') ||
+					($R1 ne '' && $R2 eq '')) {
+				return 1;
+			}
+			else {
+				return 0;
+			}
+		}
+	}
+	elsif ($barcodeMatchType == 4) {
+		$passesMatch = sub{
+			my $R1 = shift;
+			my $R2 = shift;
+			if (($R1 eq '' && $R2 ne '') ||
+					($R1 ne '' && $R2 eq '') ||
+					($R1 eq $R2 && $R1 ne '')) {
+				return 1;
+			}
+			else {
+				return 0;
+			}
+		}
+	}
+	elsif ($barcodeMatchType == 5) {
+		$passesMatch = sub{
+			my $R1 = shift;
+			my $R2 = shift;
+			if ($R1 ne '') {
+				return 1;
+			}
+			else {
+				return 0;
+			}
+		}
+	}
+	elsif ($barcodeMatchType == 6) {
+		$passesMatch = sub{
+			my $R1 = shift;
+			my $R2 = shift;
+			if ($R2 ne '') {
+				return 1;
+			}
+			else {
+				return 0;
+			}
+		}
+	}
+	elsif ($barcodeMatchType == 7) {
+		$passesMatch = sub{
+			my $R1 = shift;
+			my $R2 = shift;
+			if ($R1 ne '' || $R2 ne '') {
+				return 1;
+			}
+			else {
+				return 0;
+			}
+		}
+	}
+
+
+	my ($ina, $inb, $anomA, $anomB);
+	open($ina,  "<",  $infa)  or die "Can't open $infa: $!";
+	open($inb,  "<",  $infb)  or die "Can't open $infb: $!";
+
+
+
 	if ($opt_t eq 'fastq') {
 		open($anomA,  ">",  "anomalous_reads_R1.fq")  or die "Can't open anomalous read file: $!";
 		open($anomB,  ">",  "anomalous_reads_R2.fq")  or die "Can't open anomalous read file: $!";
@@ -156,23 +263,145 @@ if ($infb) {
 		open($anomA,  ">",  "anomalous_reads_R1.fa")  or die "Can't open anomalous read file: $!";
 		open($anomB,  ">",  "anomalous_reads_R2.fa")  or die "Can't open anomalous read file: $!";
 	}
-}
-else {
-	if ($opt_t eq 'fastq') {
-		open($anomA,  ">",  "anomalous_reads.fq")  or die "Can't open anomalous read file: $!";
+
+	#set paramaters based on fasta or fastq
+	my ($outSuffix);
+	
+	if ($opt_t eq 'fastq'){
+		$outSuffix = "_seq.fq";
 	}
 	else {
-		open($anomA,  ">",  "anomalous_reads.fa")  or die "Can't open anomalous read file: $!";
+		$outSuffix = "_seq.fa";
 	}
+	
+	my ($ida, $idb, $seqa, $seqb, $prba, $prbb);
+	# Loop through sequence file(s).
+	while (my $inLine = <$ina>){
+		$ntot = $ntot + 1;
+		
+		
+
+		#read the sequence
+		chomp($ida	= $inLine);
+		chomp($seqa	= <$ina>);
+
+		chomp($idb	= <$inb>);
+		chomp($seqb	= <$inb>);
+		
+		if ($opt_t eq 'fastq') {
+			$prba	= <$ina>; # skip the header
+			chomp($prba	= <$ina>); # qualstring
+			$prbb = <$inb>; #skip the header
+			chomp($prbb	= <$inb>); # qualstring
+		}
+		
+		#check for barcode match
+
+		
+		
+
+		my $filterValA = matchBarcodes($ida,$seqa,$barcodes);
+		my $filterValB = matchBarcodes($idb,$seqb,$barcodes);
+		
+		print "A=$filterValA, B=$filterValB\n";
+		
+		my $printFlag = 0;
+		if ($passesMatch->($filterValA,$filterValB)){
+			print "pass\n";
+		}
+		else {
+			print "fail\n";	
+		}
+		
+		
+		
+		
+		#if filters not met, print to anomalous files and go to next sequence
+		if ($printFlag == 0){
+			print $anomA $ida."\n";
+			print $anomA $seqa."\n";
+			if ($opt_t eq 'fastq') {
+				print $anomA "+\n$prba\n";
+			}
+			if ($infb){
+				print $anomB $idb."\n";
+				print $anomB $seqb."\n";
+				if ($opt_t eq 'fastq') {
+					print $anomB "+\n$prbb\n";
+				}
+			}
+			
+			
+			
+			next;
+		}
+		
+		my $barcode = $filterValA eq '' ? $filterValB : $filterValA;
+		print "barcode = $barcode, printflag = $printFlag\n";
+		
+		#open file handlers for output
+		my ($outA,$outB);
+		if ($opt_t eq 'fastq') {
+			if ($infb ne '') {
+				open ($outA,">>",$barcode."_R1.fq");
+				open ($outB,">>",$barcode."_R2.fq");
+			}
+			else {
+				open ($outA,">>",$barcode."_seq.fq");
+			}
+		}
+		else {
+			if ($infb ne '') {
+				open ($outA,">>",$barcode."_R1.fa");
+				open ($outB,">>",$barcode."_R2.fa");
+			}
+			else {
+				open ($outA,">>",$barcode."_seq.fa");	
+			}
+			
+			
+		}
+		
+		#output sequences
+		print $outA "$ida\n";
+		print $outA substr($seqa,length($filterValA))."\n";
+		if ($opt_t eq 'fastq') {
+			print $outA "+\n";
+			print $outA substr($prba,length($filterValA))."\n";
+		}
+		if ($infb ne '') {
+			print $outB "$idb\n";
+			print $outB substr($seqb,length($filterValA))."\n";
+			if ($opt_t eq 'fastq') {
+				print $outB "+\n";
+				print $outB substr($prbb,length($filterValA))."\n";
+			}
+		}
+
+		close $outA;
+		if ($infb) {
+			close $outB;
+		}
+		
+		
+	}
+
+	
+	close $ina;
+	close $inb;	
+	close $anomA;
+	close $anomB;
+
+
 }
 
-my ($ida, $bca, $seqa, $prba, $idb, $bcb, $seqb, $prbb);
-my $anom_num = 0;
-my $bc_num = 0;
-my $ntot = 0;
-my %samps;
+#process SE reads
+else {
+
+}
 
 
+=begin
 
 # Loop through sequence file(s).
 while (<$ina>){
@@ -287,17 +516,7 @@ while (<$ina>){
 	
 	
 }
-
-close $ina or die "$ina: $!";
-if ($infb) {
-	close $inb or die "$inb: $!";	
-}
-
-#close $anom or die "$anom: $!";
-close $anomA;
-if ($infb) {
-	close $anomB;
-}
+=cut
 
 # Report to log.
 chdir($outdir);
@@ -306,111 +525,6 @@ print $log "\nData read and sorted:\t\t".makeTimestamp()."\n";
 
 #chdir($outdir);
 
-
-=begin
-##### ##### ##### ##### #####
-# Write data to file.
-
-print $log "\n      ----- ----- --*-- ----- -----\n\n";
-print $log "Writing data to file.\n\n";
-close $log or die "$log: $!";
-my $out1;
-#my @temp;
-
-# Seq files.
-if ($seq eq "T"){
-	foreach $bca (keys %samps) {
-		open($out1, ">",  $bca."_seq.fa") or die "Can't open output.txt: $!";
-		foreach ( @{$samps{$bca}}){
-			@temp = split("\t",$_);
-			print $out1 ">$temp[0]\n";
-			print $out1 "$temp[1]\n";
-			print $out1 ">$temp[3]\n";
-			print $out1 "$temp[4]\n";
-		}
-	close $out1 or die "$out1: $!";
-	}
-}
-# Report to log.
-open($log, ">>", "00_bcsort_log.txt") or die "Can't open my.log: $!";
-print $log "seq\tfiles written (if applicable).\t";
-($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) =
-	localtime(time);
-print $log $mon+1;
-print $log "-$mday-";
-print $log $year+1900;
-print $log " $hour:$min:$sec\n";
-close $log or die "$log: $!";
-
-# Prb files.
-if ($prb eq "T"){
-	foreach $bca (keys %samps) {
-		open($out1, ">",  $bca."_prb.fa") or die "Can't open output.txt: $!";
-		foreach ( @{$samps{$bca}}){
-			@temp = split("\t",$_);
-			print $out1 ">$temp[0]\n";
-			print $out1 $temp[2], "\n";
-#			print $out1 asc2phred2($temp[2]), "\n";
-			print $out1 ">$temp[3]\n";
-			print $out1 $temp[5], "\n";
-#			print $out1 asc2phred2($temp[5]), "\n";
-		}
-		close $out1 or die "$out1: $!";
-	}
-}
-# Report to log.
-open($log, ">>", "00_bcsort_log.txt") or die "Can't open my.log: $!";
-print $log "prb\tfiles written (if applicable).\t";
-($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) =
-	localtime(time);
-print $log $mon+1;
-print $log "-$mday-";
-print $log $year+1900;
-print $log " $hour:$min:$sec\n";
-close $log or die "$log: $!";
-
-# Fastq files.
-if ($fq eq "T"){
-	foreach $bca (keys %samps) {
-		open($out1, ">",  $bca."_seq1.fq") or die "Can't open output.txt: $!";
-		open(my $out2, ">",  $bca."_seq2.fq") or die "Can't open output.txt: $!";
-		foreach ( @{$samps{$bca}}){
-			@temp = split("\t",$_);
-			print $out1 "\@$temp[0]\n";
-			print $out1 $temp[1], "\n";
-			print $out1 "+$temp[0]\n";
-			print $out1 "$temp[2]\n";
-			print $out2 "\@$temp[3]\n";
-			print $out2 $temp[4], "\n";
-			print $out2 "+$temp[3]\n";
-			print $out2 $temp[5], "\n";
-		}
-		close $out1 or die "out1: $!";
-		close $out2 or die "out2: $!";
-	}
-}
-# Report to log.
-open($log, ">>", "00_bcsort_log.txt") or die "Can't open my.log: $!";
-print $log "fastq\tfiles written (if applicable).\t";
-($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) =
-	localtime(time);
-print $log $mon+1;
-print $log "-$mday-";
-print $log $year+1900;
-print $log " $hour:$min:$sec\n";
-close $log or die "$log: $!";
-
-open($log, ">>", "00_bcsort_log.txt") or die "Can't open my.log: $!";
-print $log "\nData written to file.\t\t";
-($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) =
-                                                localtime(time);
-print $log $mon+1;
-print $log "-$mday-";
-print $log $year+1900;
-print $log " $hour:$min:$sec\n";
-=cut
-##### ##### ##### ##### #####
-# Summary.
 
 print $log "\n      ----- ----- --*-- ----- -----\n\n";
 print $log "\nTotal reads:\t\t";
@@ -551,6 +665,6 @@ sub getBarcodes {
 sub makeTimestamp {
 	return strftime "%d-%b-%Y %I:%M:%S", localtime;
 }
-
+#=cut
 ##### ##### ##### ##### #####
 # EOF.
