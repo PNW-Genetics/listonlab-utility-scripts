@@ -4,6 +4,8 @@ use strict;
 use warnings;
 use Cwd;
 use POSIX qw(strftime);
+use IO::File;
+#use Time::HiRes qw(gettimeofday tv_interval)
 
 #print "this\n";
 #=begin
@@ -134,7 +136,6 @@ print $log "\n      ----- ----- --*-- ----- -----\n\n";
 
 
 
-
 ##### ##### ##### ##### #####
 # Input data and sort
 # into a hash of arrays.
@@ -154,6 +155,19 @@ my %samps;
 
 #process paired end reads
 if ($infb) {
+	
+	#make output files for each barcode:
+	my %fileHandles;
+	foreach my $bc (keys %$barcodes) {
+		if ($opt_t eq 'fastq'){
+			$fileHandles{$bc}->{'R1'}=IO::File->new(">$bc\_R1.fq");
+			$fileHandles{$bc}->{'R2'}=IO::File->new(">$bc\_R2.fq");
+		}
+		else{
+			$fileHandles{$bc}->{'R1'}=IO::File->new(">$bc\_R1.fa");
+			$fileHandles{$bc}->{'R2'}=IO::File->new(">$bc\_R2.fa");
+		}
+	}
 
 	
 	# Assign an anonymous subroutine to check if the match criteria are met
@@ -303,16 +317,10 @@ if ($infb) {
 		my $filterValA = matchBarcodes($ida,$seqa,$barcodes);
 		my $filterValB = matchBarcodes($idb,$seqb,$barcodes);
 		
-		print "A=$filterValA, B=$filterValB\n";
+		#print "A=$filterValA, B=$filterValB\n";
 		
-		my $printFlag = 0;
-		if ($passesMatch->($filterValA,$filterValB)){
-			print "pass\n";
-		}
-		else {
-			print "fail\n";	
-		}
-		
+		my $printFlag = $passesMatch->($filterValA,$filterValB);
+			
 		
 		
 		
@@ -330,60 +338,41 @@ if ($infb) {
 					print $anomB "+\n$prbb\n";
 				}
 			}
-			
-			
-			
-			next;
 		}
-		
-		my $barcode = $filterValA eq '' ? $filterValB : $filterValA;
-		print "barcode = $barcode, printflag = $printFlag\n";
-		
-		#open file handlers for output
-		my ($outA,$outB);
-		if ($opt_t eq 'fastq') {
-			if ($infb ne '') {
-				open ($outA,">>",$barcode."_R1.fq");
-				open ($outB,">>",$barcode."_R2.fq");
-			}
-			else {
-				open ($outA,">>",$barcode."_seq.fq");
-			}
-		}
+			
 		else {
-			if ($infb ne '') {
-				open ($outA,">>",$barcode."_R1.fa");
-				open ($outB,">>",$barcode."_R2.fa");
-			}
-			else {
-				open ($outA,">>",$barcode."_seq.fa");	
-			}
 			
+			my $barcode = $filterValA eq '' ? $filterValB : $filterValA;
+			#print "barcode = $barcode, printflag = $printFlag\n";
 			
-		}
-		
-		#output sequences
-		print $outA "$ida\n";
-		print $outA substr($seqa,length($filterValA))."\n";
-		if ($opt_t eq 'fastq') {
-			print $outA "+\n";
-			print $outA substr($prba,length($filterValA))."\n";
-		}
-		if ($infb ne '') {
-			print $outB "$idb\n";
-			print $outB substr($seqb,length($filterValA))."\n";
+			#open file handlers for output
+			
+			my $outA = $fileHandles{$barcode}->{'R1'};
+			my $outB = $fileHandles{$barcode}->{'R1'};
+			
+			#output sequences
+			print $outA "$ida\n";
+			print $outA substr($seqa,length($filterValA))."\n";
 			if ($opt_t eq 'fastq') {
-				print $outB "+\n";
-				print $outB substr($prbb,length($filterValA))."\n";
+				print $outA "+\n";
+				print $outA substr($prba,length($filterValA))."\n";
 			}
-		}
-
-		close $outA;
-		if ($infb) {
-			close $outB;
+			if ($infb ne '') {
+				print $outB "$idb\n";
+				print $outB substr($seqb,length($filterValA))."\n";
+				if ($opt_t eq 'fastq') {
+					print $outB "+\n";
+					print $outB substr($prbb,length($filterValA))."\n";
+				}
+			}
+			
+			
 		}
 		
-		
+		#print $ntot."\n";
+		if ($ntot % 500000 == 0){
+			print "Finished processing $ntot lines: ".makeTimestamp()."\n";
+		}
 	}
 
 	
