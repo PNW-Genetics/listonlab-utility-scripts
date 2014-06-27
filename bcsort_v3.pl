@@ -25,7 +25,7 @@ use IO::File;
 #fq or fa
 
 use Getopt::Std;
-use vars qw( $opt_a $opt_b $opt_c $opt_d $opt_m $opt_t $opt_v);
+use vars qw( $opt_a $opt_b $opt_c $opt_d $opt_m $opt_t);
 
 # Usage
 my $usage = "
@@ -52,7 +52,6 @@ Usage: perl bcsort_fastq_pe.pl options
   -b	fasta/q input file b.
 	-m  barcode match type. Default = 4 for PE.
   -d	postfix for output directory. Default = null.
-  -v	verbose mode [optional T/F, default is F].
 
 The -m flag specifies what combination of matches the barcodes should have against the sequences.
 In the case of single ended reads, there is only one option (a match aginst \"read1\"). The
@@ -83,14 +82,14 @@ partitioned files could be greater than the starting read count.
 getopts('a:c:b:f:d:t:m:v');
 die $usage unless ($opt_a);
 die $usage unless ($opt_c);
+die $usage unless ($opt_t);
 
-my ($infa, $infb, $fcell, $bcInput, $outdir, $qseq, $seq, $prb, $fq, $verb, $barcodeMatchType);
+my ($infa, $infb, $fcell, $bcInput, $outdir, $qseq, $seq, $prb, $fq, $barcodeMatchType);
 
 $infa	= $opt_a;
 $infb	= $opt_b;
 $bcInput	= $opt_c; 
 $outdir	= $opt_d ? "bcsort_out".$opt_d :"bcsort_out";
-$verb	= $opt_v ? $opt_v : "F";
 if ($opt_m) {
 	$barcodeMatchType = int($opt_m);
 }
@@ -108,13 +107,17 @@ mkdir($outdir);
 chdir($outdir);
 
 open(my $log, ">", "00_bcsort_log.txt") or die "Can't open log: $!";
-print $log $usage;
-print $log "\n";
+
+print $log $usage."\n";
 print $log "      ----- ----- --*-- ----- -----\n\n";
 
-if ($verb eq "T"){
-	print $usage;
-  }
+print $log "Command run:\n";
+print $log "$0 -a $opt_a ";
+print $log "-b $opt_b " if $opt_b;
+print $log "-c $opt_c -t $opt_t ";
+print $log "-d $opt_d " if $opt_d;
+print $log "\n\n";
+print $log "      ----- ----- --*-- ----- -----\n\n";
 
 # Initial timestmp.
 my $stime = makeTimestamp();
@@ -126,10 +129,8 @@ print $log "\n      ----- ----- --*-- ----- -----\n\n";
 
 chdir($bdir);
 
-my $barcodes = getBarcodes($bcInput,$verb,$log);
+my $barcodes = getBarcodes($bcInput,$log);
 #my $taglen = length($temp[0]);
-print $log "Barcodes used:\n";
-print $log join("\n",keys %$barcodes)."\n\n";
 
 
 print $log "\n      ----- ----- --*-- ----- -----\n\n";
@@ -157,6 +158,7 @@ my %samps;
 if ($infb) {
 	
 	#make output files for each barcode:
+	chdir($outdir);
 	my %fileHandles;
 	foreach my $bc (keys %$barcodes) {
 		if ($opt_t eq 'fastq'){
@@ -173,7 +175,6 @@ if ($infb) {
 	# Assign an anonymous subroutine to check if the match criteria are met
 	# Only need to do this once per run, so better to do it out here than in input loop
 	my $passesMatch;
-	print "bcmatcht= $barcodeMatchType\n";
 	if ($barcodeMatchType == 1) {
 		$passesMatch = sub{
 			my $R1 = shift;
@@ -262,13 +263,13 @@ if ($infb) {
 		}
 	}
 
-
+	chdir($bdir);
 	my ($ina, $inb, $anomA, $anomB);
 	open($ina,  "<",  $infa)  or die "Can't open $infa: $!";
 	open($inb,  "<",  $infb)  or die "Can't open $infb: $!";
 
 
-
+	chdir($outdir);	
 	if ($opt_t eq 'fastq') {
 		open($anomA,  ">",  "anomalous_reads_R1.fq")  or die "Can't open anomalous read file: $!";
 		open($anomB,  ">",  "anomalous_reads_R2.fq")  or die "Can't open anomalous read file: $!";
@@ -312,17 +313,13 @@ if ($infb) {
 		#check for barcode match
 
 		
-		
-
 		my $filterValA = matchBarcodes($ida,$seqa,$barcodes);
 		my $filterValB = matchBarcodes($idb,$seqb,$barcodes);
 		
 		#print "A=$filterValA, B=$filterValB\n";
 		
 		my $printFlag = $passesMatch->($filterValA,$filterValB);
-			
-		
-		
+		#print "printflag=$printFlag\n";	
 		
 		#if filters not met, print to anomalous files and go to next sequence
 		if ($printFlag == 0){
@@ -341,14 +338,15 @@ if ($infb) {
 		}
 			
 		else {
-			
+			$bc_num++;
 			my $barcode = $filterValA eq '' ? $filterValB : $filterValA;
+			$barcodes->{$barcode}+=1;
 			#print "barcode = $barcode, printflag = $printFlag\n";
 			
 			#open file handlers for output
 			
 			my $outA = $fileHandles{$barcode}->{'R1'};
-			my $outB = $fileHandles{$barcode}->{'R1'};
+			my $outB = $fileHandles{$barcode}->{'R2'};
 			
 			#output sequences
 			print $outA "$ida\n";
@@ -390,127 +388,10 @@ else {
 }
 
 
-=begin
-
-# Loop through sequence file(s).
-while (<$ina>){
-	$ntot = $ntot + 1;
-	
-	chomp($ida	= $_);
-	chomp($seqa	= <$ina>);
-	
-	if ($infb) {
-		chomp($idb	= substr <$inb>, 1);
-		chomp($seqb	= <$inb>);
-	}
-	
-	if ($opt_t eq 'fastq') {
-		# Read a.
-		$prba	= <$ina>; # skip the header
-		chomp($prba	= <$ina>); # qualstring.
-
-	# Read b.
-		if ($infb) {
-			$prbb = <$inb>; #skip the header
-			chomp($prbb	= <$inb>); # qualstring
-		}
-	}
-	
-	#check for barcode match
-	my $filterValA = matchBarcodes($ida,$seqa,$barcodes);
-	my $filterValB = "";
-	if ($infb) {
-		$filterValB = matchBarcodes($idb,$seqb,$barcodes);
-	}
-	print "A=$filterValA, B=$filterValB\n";
-	
-	my $printFlag = 0;
-	if ($infb) {
-		if (($filterValA ne '' and $filterValB eq '') or
-				($filterValA eq '' and $filterValB ne '') or
-				($filterValA eq $filterValB and $filterValA ne '')) {
-			$printFlag = 1;
-		}
-	}
-	else {
-		$printFlag = 1 if $filterValA ne '';
-	}
-	
-	#if filters not met, print to anomalous files and go to next sequence
-	if ($printFlag == 0){
-		print $anomA $ida."\n";
-		print $anomA $seqa."\n";
-		if ($opt_t eq 'fastq') {
-			print $anomA "+\n$prba\n";
-		}
-		if ($infb){
-			print $anomB $idb."\n";
-			print $anomB $seqb."\n";
-			if ($opt_t eq 'fastq') {
-				print $anomB "+\n$prbb\n";
-			}
-		}
-		
-		
-		
-		next;
-	}
-	
-	my $barcode = $filterValA eq '' ? $filterValB : $filterValA;
-	print "barcode = $barcode, printflag = $printFlag\n";
-	
-	#open file handlers for output
-	my ($outA,$outB);
-	if ($opt_t eq 'fastq') {
-		if ($infb ne '') {
-			open ($outA,">>",$barcode."_R1.fq");
-			open ($outB,">>",$barcode."_R2.fq");
-		}
-		else {
-			open ($outA,">>",$barcode."_seq.fq");
-		}
-	}
-	else {
-		if ($infb ne '') {
-			open ($outA,">>",$barcode."_R1.fa");
-			open ($outB,">>",$barcode."_R2.fa");
-		}
-		else {
-			open ($outA,">>",$barcode."_seq.fa");	
-		}
-		
-		
-	}
-	
-	#output sequences
-	print $outA "$ida\n";
-	print $outA substr($seqa,length($filterValA))."\n";
-	if ($opt_t eq 'fastq') {
-		print $outA "+\n";
-		print $outA substr($prba,length($filterValA))."\n";
-	}
-	if ($infb ne '') {
-		print $outB "$idb\n";
-		print $outB substr($seqb,length($filterValA))."\n";
-		if ($opt_t eq 'fastq') {
-			print $outB "+\n";
-			print $outB substr($prbb,length($filterValA))."\n";
-		}
-	}
-
-	close $outA;
-	if ($infb) {
-		close $outB;
-	}
-	
-	
-}
-=cut
-
 # Report to log.
 chdir($outdir);
 #open($log, ">>", "00_bcsort_log.txt") or die "Can't open my.log: $!";
-print $log "\nData read and sorted:\t\t".makeTimestamp()."\n";
+print $log "\nData read and parsed:\t\t".makeTimestamp()."\n";
 
 #chdir($outdir);
 
@@ -539,7 +420,7 @@ print "\n";
 
 # Reprint start time.
 print $log "\n      ----- ----- --*-- ----- -----\n\n";
-print $log "Process begun: $stime ";
+print $log "Process begun: $stime\n";
 
 # Log finish time.
 print $log "Process finished: ".makeTimestamp()."\n\n";
@@ -615,12 +496,7 @@ sub idbc {
 
 sub getBarcodes {
 	my $bcInput = shift;
-	my $verb = shift;
 	my $logFH = shift;
-	
-	
-	if ($verb eq "T")
-		{print "Reading barcodes.\n";}
 	
 	my %barcodes;
 	if (-f $bcInput) {
@@ -629,7 +505,6 @@ sub getBarcodes {
 		open($in,  "<",  $bcInput)  or die "Can't open $bcInput: $!";
 		
 		my @temp;
-		print $logFH "Barcodes.\n";
 		while (<$in>){
 			chomp;
 			@temp = split("\t", $_);
