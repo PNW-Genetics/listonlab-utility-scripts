@@ -25,7 +25,7 @@ use IO::File;
 #fq or fa
 
 use Getopt::Std;
-use vars qw( $opt_a $opt_b $opt_c $opt_d $opt_m $opt_t);
+use vars qw( $opt_a $opt_b $opt_c $opt_m $opt_t $opt_o);
 
 # Usage
 my $usage = "
@@ -44,14 +44,14 @@ not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
 Usage: perl bcsort_fastq_pe.pl options
  required:
-  -a	fasta/q input file a.
-  -c	barcodes, either as a comma separated list or a file, one barcode per line, no quotes
+  -a  fasta/q input file a.
+  -c  barcodes, either as a comma separated list or a file, one barcode per line, no quotes
   -t  sequence type.  Enter 'fastaa' or 'fastq'
   
  optional:
-  -b	fasta/q input file b.
-	-m  barcode match type. Default = 4 for PE.
-  -d	postfix for output directory. Default = null.
+  -b  fasta/q input file b.
+  -m  barcode match type. Default = 4 for PE.
+  -o  Output directory name (will be created if doesnt exist).  Default = bcsort_out.
 
 The -m flag specifies what combination of matches the barcodes should have against the sequences.
 In the case of single ended reads, there is only one option (a match aginst \"read1\"). The
@@ -79,7 +79,7 @@ partitioned files could be greater than the starting read count.
 ";
 
 # command line processing.
-getopts('a:c:b:f:d:t:m:v');
+getopts('a:c:b:f:t:m:o:v');
 die $usage unless ($opt_a);
 die $usage unless ($opt_c);
 die $usage unless ($opt_t);
@@ -88,14 +88,15 @@ my ($infa, $infb, $fcell, $bcInput, $outdir, $qseq, $seq, $prb, $fq, $barcodeMat
 
 $infa	= $opt_a;
 $infb	= $opt_b;
-$bcInput	= $opt_c; 
-$outdir	= $opt_d ? "bcsort_out".$opt_d :"bcsort_out";
+$bcInput	= $opt_c;
+$outdir	= $opt_o || "bcsort_out";
 if ($opt_m) {
 	$barcodeMatchType = int($opt_m);
 }
 else {
 	$barcodeMatchType = $infb eq '' ? 1 : 4;
 }
+
 
 
 
@@ -114,8 +115,8 @@ print $log "      ----- ----- --*-- ----- -----\n\n";
 print $log "Command run:\n";
 print $log "$0 -a $opt_a ";
 print $log "-b $opt_b " if $opt_b;
-print $log "-c $opt_c -t $opt_t ";
-print $log "-d $opt_d " if $opt_d;
+print $log "-c $opt_c -t $opt_t -m $barcodeMatchType ";
+print $log "-o $outdir ";
 print $log "\n\n";
 print $log "      ----- ----- --*-- ----- -----\n\n";
 
@@ -506,6 +507,7 @@ sub getBarcodes {
 		
 		my @temp;
 		while (<$in>){
+			next if $_=~/^\n+$/;
 			chomp;
 			@temp = split("\t", $_);
 			$barcodes{uc($temp[0])} = 0;
