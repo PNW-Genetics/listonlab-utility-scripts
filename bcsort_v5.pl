@@ -7,22 +7,16 @@ use POSIX qw(strftime);
 use IO::File;
 #use Time::HiRes qw(gettimeofday tv_interval)
 
-#print "this\n";
-#=begin
-##### ##### ##### ##### #####
-# Hardwired parameters.
-
-#my $taglen = 4;
-
-##### ##### ##### ##### #####
-
 #Results should be compatible with NCBI submissions (the header modifications currently in the script make the files incompatible with SRA submissions).
 #Parameterize the index input to accept either comma separated indexes at the command line or a file of indexes
 #Accept multiple indexes of varying length.
 #Add a parameter to switch between single and paired end processing (i.e. we would only need one script rather than two).
 #Add the ability to recognize different header types, if necessary (different Illumina machines produce different header patterns, which occasionally confuse bcsort).
-#- Add the ability to skip blank lines in the fasta file.
-#fq or fa
+#Add the ability to skip blank lines in the fasta file.
+#Processes either fasta or fastq
+#Add ability to turn printing anomalous reads off or on?
+#Output/report differently when mismatched barcodes are found
+
 
 use Getopt::Std;
 use vars qw( $opt_a $opt_b $opt_c $opt_m $opt_t $opt_o);
@@ -173,8 +167,9 @@ if ($infb) {
 	}
 
 	
-	# Assign an anonymous subroutine to check if the match criteria are met
+	# Assign an anonymous subroutine to check if the match criteria are met.
 	# Only need to do this once per run, so better to do it out here than in input loop
+	
 	my $passesMatch;
 	if ($barcodeMatchType == 1) {
 		$passesMatch = sub{
@@ -329,13 +324,13 @@ if ($infb) {
 			if ($opt_t eq 'fastq') {
 				print $anomA "+\n$prba\n";
 			}
-			if ($infb){
-				print $anomB $idb."\n";
-				print $anomB $seqb."\n";
-				if ($opt_t eq 'fastq') {
-					print $anomB "+\n$prbb\n";
-				}
+		
+			print $anomB $idb."\n";
+			print $anomB $seqb."\n";
+			if ($opt_t eq 'fastq') {
+				print $anomB "+\n$prbb\n";
 			}
+			
 		}
 			
 		else {
@@ -356,15 +351,13 @@ if ($infb) {
 				print $outA "+\n";
 				print $outA substr($prba,length($filterValA))."\n";
 			}
-			if ($infb ne '') {
-				print $outB "$idb\n";
-				print $outB substr($seqb,length($filterValA))."\n";
-				if ($opt_t eq 'fastq') {
-					print $outB "+\n";
-					print $outB substr($prbb,length($filterValA))."\n";
-				}
+		
+			print $outB "$idb\n";
+			print $outB substr($seqb,length($filterValA))."\n";
+			if ($opt_t eq 'fastq') {
+				print $outB "+\n";
+				print $outB substr($prbb,length($filterValA))."\n";
 			}
-			
 			
 		}
 		
@@ -383,11 +376,108 @@ if ($infb) {
 
 }
 
-#process SE reads
+#process paired end reads
 else {
+	
+	#make output files for each barcode:
+	chdir($outdir);
+	my %fileHandles;
+	foreach my $bc (keys %$barcodes) {
+		if ($opt_t eq 'fastq'){
+			$fileHandles{$bc}->{'R1'}=IO::File->new(">$bc\_R1.fq");
+			$fileHandles{$bc}->{'R2'}=IO::File->new(">$bc\_R2.fq");
+		}
+		else{
+			$fileHandles{$bc}->{'R1'}=IO::File->new(">$bc\_R1.fa");
+			$fileHandles{$bc}->{'R2'}=IO::File->new(">$bc\_R2.fa");
+		}
+	}
+
+
+	chdir($bdir);
+	my ($ina, $anomA);
+	open($ina,  "<",  $infa)  or die "Can't open $infa: $!";
+	
+	chdir($outdir);	
+	if ($opt_t eq 'fastq') {
+		open($anomA,  ">",  "anomalous_reads_R1.fq")  or die "Can't open anomalous read file: $!";
+	}
+	else {
+		open($anomA,  ">",  "anomalous_reads_R1.fa")  or die "Can't open anomalous read file: $!";
+	}
+
+	#set paramaters based on fasta or fastq
+	my ($outSuffix);
+	
+	if ($opt_t eq 'fastq'){
+		$outSuffix = "_seq.fq";
+	}
+	else {
+		$outSuffix = "_seq.fa";
+	}
+	
+	my ($ida, $seqa, $prba);
+	# Loop through sequence file(s).
+	while (my $inLine = <$ina>){
+		$ntot = $ntot + 1;
+		
+		#read the sequence
+		chomp($ida	= $inLine);
+		chomp($seqa	= <$ina>);
+
+		if ($opt_t eq 'fastq') {
+			$prba	= <$ina>; # skip the header
+			chomp($prba	= <$ina>); # qualstring
+		}
+		
+		#check for barcode match
+
+		
+		my $filterValA = matchBarcodes($ida,$seqa,$barcodes);
+		
+		#print "A=$filterValA, B=$filterValB\n";
+		
+		#if filters not met, print to anomalous files and go to next sequence
+		if ($filterValA eq ''){
+			print $anomA $ida."\n";
+			print $anomA $seqa."\n";
+			if ($opt_t eq 'fastq') {
+				print $anomA "+\n$prba\n";
+			}
+			
+		}
+			
+		else {
+			$bc_num++;
+			my $barcode = $filterValA;
+			$barcodes->{$barcode}+=1;
+			#print "barcode = $barcode, printflag = $printFlag\n";
+			
+			#open file handlers for output
+			
+			my $outA = $fileHandles{$barcode}->{'R1'};
+			
+			#output sequences
+			print $outA "$ida\n";
+			print $outA substr($seqa,length($filterValA))."\n";
+			if ($opt_t eq 'fastq') {
+				print $outA "+\n";
+				print $outA substr($prba,length($filterValA))."\n";
+			}
+			
+		}
+		
+		#print $ntot."\n";
+		if ($ntot % 500000 == 0){
+			print "Finished processing $ntot lines: ".makeTimestamp()."\n";
+		}
+	}
+
+	
+	close $ina;
+	close $anomA;
 
 }
-
 
 # Report to log.
 chdir($outdir);
