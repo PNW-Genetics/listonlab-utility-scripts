@@ -5,35 +5,24 @@ use warnings;
 use Cwd;
 use POSIX qw(strftime);
 use IO::File;
-#use Time::HiRes qw(gettimeofday tv_interval)
 
-#Results should be compatible with NCBI submissions (the header modifications currently in the script make the files incompatible with SRA submissions).
-#Parameterize the index input to accept either comma separated indexes at the command line or a file of indexes
-#Accept multiple indexes of varying length.
-#Add a parameter to switch between single and paired end processing (i.e. we would only need one script rather than two).
-#Add the ability to recognize different header types, if necessary (different Illumina machines produce different header patterns, which occasionally confuse bcsort).
-#Add the ability to skip blank lines in the fasta file.
-#Processes either fasta or fastq
 #Add ability to turn printing anomalous reads off or on?
-#Output/report differently when mismatched barcodes are found
-
+#Output/report differently when mismatched barcodes are found?
 
 use Getopt::Std;
-use vars qw( $opt_a $opt_b $opt_c $opt_m $opt_t $opt_o);
+use vars qw( $opt_a $opt_b $opt_c $opt_m $opt_t $opt_o $opt_f);
 
 # Usage
 my $usage = "
-bcsort_fastq_pe - Sort barcodes from a pair of fastq files.
-		      by
-		Brian J. Knaus
-		 August 2009
+perl bcsort_v5.pl -a file_R1 [-b file_R2.pl] -c barcodes -t fasta/fastq [options]
 
-Copyright (c) 2009 Brian J. Knaus.
+bcsort_v5.pl - Sort barcodes from fasta or fastq sequences files.
+Based on a script by Brian J. Knaus.
+
 License is hereby granted for personal, academic, and non-profit use.
-Commercial users should contact the author (http://brianknaus.com).
+Commercial users should contact the author Rich Cron at the Pacific NW Research Station.
 
-Great effort has been taken to make this software perform its said
-task however, this software comes with ABSOLUTELY NO WARRANTY,
+This software comes with ABSOLUTELY NO WARRANTY,
 not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
 Usage: perl bcsort_fastq_pe.pl options
@@ -44,8 +33,15 @@ Usage: perl bcsort_fastq_pe.pl options
   
  optional:
   -b  fasta/q input file b.
-  -m  barcode match type. Default = 4 for PE.
+  -m  barcode match type. Default = 4 for PE, essentially 1 for SE.
   -o  Output directory name (will be created if doesnt exist).  Default = bcsort_out.
+	-f  Fixed string to be added to the output filenames (e.g. flowcell and lane id).
+
+If a file is supplied to the -c flag, it should contain one barcode per line.  Output will be
+one file per barcode with the name based on the barcode.  Optionally, a descriptor can be
+supplied in a second (tab separated) column.  If this is done, the output files will be
+named <descriptor>_<barcode>.[fa or fq].  If the -f is used, the files will be nameed
+<descriptor>_<barcode>_fixed-string.[fa or fq].
 
 The -m flag specifies what combination of matches the barcodes should have against the sequences.
 In the case of single ended reads, there is only one option (a match aginst \"read1\"). The
@@ -73,7 +69,7 @@ partitioned files could be greater than the starting read count.
 ";
 
 # command line processing.
-getopts('a:c:b:f:t:m:o:v');
+getopts('a:c:b:f:t:m:o:f:v');
 die $usage unless ($opt_a);
 die $usage unless ($opt_c);
 die $usage unless ($opt_t);
@@ -120,12 +116,19 @@ print $log "Process begun:\t\t".makeTimestamp()."\n";
 print $log "\n      ----- ----- --*-- ----- -----\n\n";
 
 ##### ##### ##### ##### #####
-# Input barcodes.
+# Input barcodes and assmeble output file names
 
 chdir($bdir);
 
+
 my $barcodes = getBarcodes($bcInput,$log);
+my %barcodeHitCounts;
+foreach my $key (keys %$barcodes) {
+	$barcodeHitCounts{$key} = 0;
+}
+my $fileNames = makeFileNames($barcodes,$opt_f);
 #my $taglen = length($temp[0]);
+
 
 
 print $log "\n      ----- ----- --*-- ----- -----\n\n";
@@ -156,16 +159,16 @@ if ($infb) {
 	chdir($outdir);
 	my %fileHandles;
 	foreach my $bc (keys %$barcodes) {
+		my $fileNameBase = $fileNames->{$bc};
 		if ($opt_t eq 'fastq'){
-			$fileHandles{$bc}->{'R1'}=IO::File->new(">$bc\_R1.fq");
-			$fileHandles{$bc}->{'R2'}=IO::File->new(">$bc\_R2.fq");
+			$fileHandles{$bc}->{'R1'}=IO::File->new(">$fileNameBase\_R1.fq");
+			$fileHandles{$bc}->{'R2'}=IO::File->new(">$fileNameBase\_R2.fq");
 		}
 		else{
-			$fileHandles{$bc}->{'R1'}=IO::File->new(">$bc\_R1.fa");
-			$fileHandles{$bc}->{'R2'}=IO::File->new(">$bc\_R2.fa");
+			$fileHandles{$bc}->{'R1'}=IO::File->new(">$fileNameBase\_R1.fa");
+			$fileHandles{$bc}->{'R2'}=IO::File->new(">$fileNameBase\_R2.fa");
 		}
 	}
-
 	
 	# Assign an anonymous subroutine to check if the match criteria are met.
 	# Only need to do this once per run, so better to do it out here than in input loop
@@ -336,7 +339,7 @@ if ($infb) {
 		else {
 			$bc_num++;
 			my $barcode = $filterValA eq '' ? $filterValB : $filterValA;
-			$barcodes->{$barcode}+=1;
+			$barcodeHitCounts{$barcode} += 1;
 			#print "barcode = $barcode, printflag = $printFlag\n";
 			
 			#open file handlers for output
@@ -383,13 +386,14 @@ else {
 	chdir($outdir);
 	my %fileHandles;
 	foreach my $bc (keys %$barcodes) {
+		my $fileNameBase = $fileNames->{$bc};
 		if ($opt_t eq 'fastq'){
-			$fileHandles{$bc}->{'R1'}=IO::File->new(">$bc\_R1.fq");
-			$fileHandles{$bc}->{'R2'}=IO::File->new(">$bc\_R2.fq");
+			$fileHandles{$bc}->{'R1'}=IO::File->new(">$fileNameBase\_R1.fq");
+			$fileHandles{$bc}->{'R2'}=IO::File->new(">$fileNameBase\_R2.fq");
 		}
 		else{
-			$fileHandles{$bc}->{'R1'}=IO::File->new(">$bc\_R1.fa");
-			$fileHandles{$bc}->{'R2'}=IO::File->new(">$bc\_R2.fa");
+			$fileHandles{$bc}->{'R1'}=IO::File->new(">$fileNameBase\_R1.fa");
+			$fileHandles{$bc}->{'R2'}=IO::File->new(">$fileNameBase\_R2.fa");
 		}
 	}
 
@@ -450,7 +454,7 @@ else {
 		else {
 			$bc_num++;
 			my $barcode = $filterValA;
-			$barcodes->{$barcode}+=1;
+			$barcodeHitCounts{$barcode} += 1;
 			#print "barcode = $barcode, printflag = $printFlag\n";
 			
 			#open file handlers for output
@@ -486,23 +490,38 @@ print $log "\nData read and parsed:\t\t".makeTimestamp()."\n";
 
 #chdir($outdir);
 
+#set scale for reporting read counts
+my $scale = 1000;
+my $scaleText = "thousand";
+foreach my $value (values %barcodeHitCounts) {
+	if ($value > 1000000) {
+		$scale = 1000000;
+		$scaleText = "million";
+	}
+}
+
+
 
 print $log "\n      ----- ----- --*-- ----- -----\n\n";
 print $log "\nTotal reads:\t\t";
-print $log $ntot / 1000000, "\tmillion";
+print $log sprintf("%.3f",$ntot / $scale), "\t$scaleText";
 print $log "\nBarcoded reads:\t\t";
-print $log $bc_num / 1000000, "\tmillion";
+print $log sprintf("%.3f",$bc_num / $scale), "\t$scaleText";
 print $log "\nNon-barcoded reads:\t";
-print $log ($ntot - $bc_num) / 1000000, "\tmillion";
+print $log sprintf("%.3f",($ntot - $bc_num) / $scale), "\t$scaleText";
 print $log "\nAnomalous reads:\t";
-print $log $anom_num / 1000000, "\tmillion";
+print $log sprintf("%.3f",$anom_num / $scale), "\t$scaleText";
 
 
 print $log "\n\n";
 
 print $log "Barcode Summary:\n";
-while (my($key, $value) = each %$barcodes){
-	print $log "$key \t=>\t", $value/1000000, "\tmillion", "\n";
+while (my($key, $value) = each %barcodeHitCounts){
+	print $log "$key \t=>\t";
+	if ($barcodes->{$key}) {
+		print $log $barcodes->{$key}."\t=>\t";
+	}
+	print $log sprintf("%.3f",$value/$scale), " $scaleText\n";
 }
 print "\n";
 
@@ -544,13 +563,6 @@ sub asc2phred2 {
 	return(join " ", @temp);
 }
 
-#sub qseq2id {
-#	my @temp = split("\t", $_);
-#	return join(":", $temp[0], $temp[2], $temp[3], $temp[4], $temp[5] );
-#}
-
-
-
 
 sub matchBarcodes {
 	my $header = shift;
@@ -572,19 +584,6 @@ sub matchBarcodes {
 }
 
 
-sub idbc {
-	# id tab bc as input.
-	my @id = split(/\#|\//, shift);
-	my $bca = shift;
-	my $fc = shift;
-	$id[1] = $bca;
-	my $returnstring = join("", $fc, "_", $id[0], "\#", $id[1]);
-	if ($id[2]) {
-		$returnstring .= "/$id[2]"
-	}
-	return $returnstring;
-}
-
 sub getBarcodes {
 	my $bcInput = shift;
 	my $logFH = shift;
@@ -600,7 +599,12 @@ sub getBarcodes {
 			next if $_=~/^\n+$/;
 			chomp;
 			@temp = split("\t", $_);
-			$barcodes{uc($temp[0])} = 0;
+			if ($temp[1]){
+				$barcodes{uc($temp[0])} = $temp[1];
+			}
+			else{
+				$barcodes{uc($temp[0])} = 0;
+			}
 		}
 	}
 	
@@ -617,6 +621,24 @@ sub getBarcodes {
 	return \%barcodes;
 }
 
+sub makeFileNames {
+	my $bcodes = shift;
+	my $fixedString = shift;
+	my %retHash;
+	while (my($key,$value) = each %$bcodes){
+		my $filename = "";
+		if ($value) {
+			$value =~ s/\s/_/;
+			$filename = $value."_".$key;
+		}
+		else{
+			$filename = $key;
+		}
+		$filename .= "_".$fixedString if $fixedString;
+		$retHash{$key}=$filename;
+	}
+	return \%retHash;
+}
 
 sub makeTimestamp {
 	return strftime "%d-%b-%Y %I:%M:%S", localtime;
