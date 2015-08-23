@@ -27,4 +27,4 @@ Obvious next steps:
 
 
 ##ncbiTaxonomyMunger.py##
-Accepts tabular input (usually BLAST output) and adds columns for taxonomic identifiers.  Taxonomomy information is derived from an NCBI Taxonomy Database
+Accepts tabular input (usually BLAST output) and adds columns for taxonomic identifiers.  Taxonomomy information is derived from an NCBI Taxonomy Database.
