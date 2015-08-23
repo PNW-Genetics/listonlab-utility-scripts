@@ -19,12 +19,6 @@ perl bcsort_v5.pl -a file_R1 [-b file_R2.pl] -c barcodes -t fasta/fastq [options
 bcsort_v5.pl - Sort barcodes from fasta or fastq sequences files.
 Based on a script by Brian J. Knaus.
 
-License is hereby granted for personal, academic, and non-profit use.
-Commercial users should contact the author Rich Cron at the Pacific NW Research Station.
-
-This software comes with ABSOLUTELY NO WARRANTY,
-not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-
 Usage: perl bcsort_fastq_pe.pl options
  required:
   -a  fasta/q input file a.
@@ -65,6 +59,21 @@ Option 4 accepts the greatest number of reads into non-overlaping partitions, wh
 it is the default.  Using higher option numbers could accept more but if, for instances, the read
 files are processed for each barcode separately, the total number of reads across all
 partitioned files could be greater than the starting read count.
+
+
+License:
+This is free and unencumbered software released into the public domain.  All authors
+are or were bona fide officers or employees of the U.S. Government at the time the software
+was developed and that the work is a “work of the U.S. Government” (prepared by an officer
+or employee of the U.S. Government as a part of official duties), and, therefore, is not subject
+to U.S. copyright as stated in Patent, Trademark and Copyright Laws 17 U.S.C. §105.
+ 
+The software is provided “as is”, without warranty of any kind, express or implied, including
+but not limited to the warranties of merchantability, fitness for a  particular purpose and
+non-infringement. In no event shall the authors be liable for any claim, damages or other
+liability, whether in an action of contract, tory or otherwise, arising from, out of or in
+connection with the software or the use of other dealings in the software.
+
 
 ";
 
