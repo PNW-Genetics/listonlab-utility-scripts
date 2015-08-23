@@ -8,11 +8,6 @@ These are all scripts done for the the Liston or Cronn labs that I've either wri
 A perl program to partition barcoded fasta or fastq files.  
 
 
-###old_bcsort_versions###
-
-Versions of bcsort saved separately, some are associated with various publications
-
-
 ###excelToSchema.py###
 
 A python script for converting an Excel template to an executable SQL table creation script.  Used for the redevelopment of the wildstrawberry website and still a work in progress.  
