@@ -1,17 +1,14 @@
-Liston/Cronn Lab utility scripts
-======
+##Liston/Cronn Lab utility scripts##
+These are all scripts done for the the Liston or Cronn labs that I've either written entirely (ncbiTaxonomyMunger.py and excelToSchema.py) or contributed heavily to (bcsort_v5.pl).
 
-##bcsort_v5.pl##
+---------------------------------------
+
+###bcsort_v5.pl###
 
 A perl program to partition barcoded fasta or fastq files.  
 
 
-##old_bcsort_versions##
-
-Versions of bcsort saved separately, some are associated with various publications
-
-
-##excelToSchema.py##
+###excelToSchema.py###
 
 A python script for converting an Excel template to an executable SQL table creation script.  Used for the redevelopment of the wildstrawberry website and still a work in progress.  
 
@@ -26,5 +23,5 @@ Obvious next steps:
 * add a check to make sure fields with a foreign key ref have the same field type as the referenced field
 
 
-##ncbiTaxonomyMunger.py##
+###ncbiTaxonomyMunger.py###
 Accepts tabular input (usually BLAST output) and adds columns for taxonomic identifiers.  Taxonomomy information is derived from an NCBI Taxonomy Database.
