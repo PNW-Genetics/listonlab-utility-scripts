@@ -1,4 +1,4 @@
-#!/usr/bin/env pyt hon3
+#!/usr/bin/env python3
 import sys
 import os
 import argparse
@@ -448,15 +448,15 @@ def processArgs():
     #argParser = MyParser(usage=("%s (sourceDir & filter) | filterFile" % (os.path.basename(sys.argv[0]))))
     argParser = MyParser(formatter_class=argparse.RawDescriptionHelpFormatter,
                          description='''
-Coverts Exel spreadsheet to SQL for database creation.
+Converts Excel spreadsheet to SQL for database creation.
 
-Individual tabs represent tables.The first row of each worksheet should
-contain field attribute headers and thata worksheet that doesn't contain
-the text 'field_name' in column cell A1 will be ignored.  A blank row will
+Individual tabs represent tables. The first row of each worksheet should
+contain field attribute headers.  Any worksheet that doesn't contain
+the text 'field_name' in cell A1 will be ignored.  A blank row will
 end field imports.  Foreign keys should be designated by the referenced table
 and reference field with a colon in between (i.e. tbl:field).
 
-A very limied number of field types are currently supported (int, float,
+A very limited number of field types are currently supported (int, float,
 date, and text).  
 
 
