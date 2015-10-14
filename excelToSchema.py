@@ -3,6 +3,7 @@ import sys
 import os
 import argparse
 import xlrd
+import re
 
 '''
 This software is available uner the MIT license:
@@ -86,7 +87,7 @@ def main():
     
     #make the sql
     sys.stderr.write('Writing the SQL statement\n\n')
-    sql = makeMysql(tableData,tableOrder,args.dbname)
+    sql = makeMysql(tableData,tableOrder,args.dbname,args.e,args.c)
     sys.stdout.write(sql)
 
 
@@ -94,7 +95,7 @@ def main():
 
 
 #generate the SQL for database creation based on the table data read from the spreadsheet
-def makeMysql (tables,tOrder,dbname) :
+def makeMysql (tables,tOrder,dbname,engine,charset) :
     
     sql = 'CREATE DATABASE IF NOT EXISTS {};\n'.format(dbname)
     
@@ -123,7 +124,9 @@ def makeMysql (tables,tOrder,dbname) :
             
             
             
-        sql += '\n);\n\n'
+        sql += '\n) ENGINE={} DEFAULT CHARSET={}'.format(engine,charset)
+        
+        sql += ';\n\n'
     
     
     return sql
@@ -361,9 +364,18 @@ class Field (object):
         if len(validationErrors) > 0 :
             exceptionText = "A field is missing the following attribs: {}\n".format(",".join(validationErrors))
         
-        #check if ftype is a recognized value
-        if not Field.getftypeFromAlias(self.ftype) and not priorFtypeError :
-            exceptionText += "A field type of {} is not recognized as a valid type\n".format(self.ftype)
+        #Check if ftype is a recognized value.  Varchar fields have to be checked separately because of the variable length.
+        if not priorFtypeError :
+            varmatch = re.search('^varchar',self.ftype,re.IGNORECASE)
+            if varmatch == None :
+                if not Field.getftypeFromAlias(self.ftype) :
+                    exceptionText += "A field type of {} is not recognized as a valid type\n".format(self.ftype)
+            else :
+                fullmatch = re.search('varchar\(\d+\)',self.ftype,re.IGNORECASE)
+                if fullmatch == None :
+                    exceptionText += "A VARCHAR type should be in the form of VARCHAR(n) where n is an integer consistent with the limits placed on varchar for your version of SQL\n"
+            
+               
         
         if exceptionText != '' :
             raise TableException(exceptionText)
@@ -373,7 +385,32 @@ class Field (object):
     def to_mysql (self) :
         
         defList = [self.fname]
-        defList.append(Field.getftypeFromAlias(self.ftype))
+
+        try :
+            ftest = Field.getftypeFromAlias(self.ftype)
+            if ftest == False :
+                varmatch = re.search('^varchar\(\d+\)',self.ftype,re.IGNORECASE)
+                if varmatch == None :
+                    sys.stderr.write(e)
+                    sys.stderr.write('Catastrophic error in building mysql output. Exiting.\n')
+                else :
+                    defList.append(self.ftype.upper())
+            else :
+                defList.append(Field.getftypeFromAlias(self.ftype))
+        #except ValueError as ve :
+        #    print('here')
+        #    varmatch = re.search('^varchar',self.ftype,re.IGNORECASE)
+        #    if varmatch == None :
+        #        sys.stderr.write(e)
+        #        sys.stderr.write('Catastrophic error in building mysql output. Exiting.\n')
+        #        sys.exit()
+        #    else :
+        #        defList.append(self.ftype.upper())
+        except Exception as e :
+            sys.stderr.write(e)
+            sys.stderr.write('Catastrophic error in building mysql output. Exiting.\n')
+            sys.exit()
+        
         if self.uniqueFlag :
             defList.append('UNIQUE')
         if self.autoincrement :
@@ -465,7 +502,8 @@ date, and text).
     
     argParser.add_argument('dbname', metavar="dbname", help="The name of the database")
     argParser.add_argument('xlsfile', metavar="excel_file", action=CheckFile, help="The Excel schema file")
-    
+    argParser.add_argument('-e', metavar="engine", default='InnoDB', help="The engine to use for all tables. Default = 'InnoDB'.")
+    argParser.add_argument('-c', metavar="charset", default='utf8', help="The charset to use for all tables. Default = 'utf8'.")
     ap=argParser.parse_args()
     return ap
 
